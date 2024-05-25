@@ -111,17 +111,21 @@ int main(int argc, char* argv[]) {
         }
 
         // copy frame body
-        int packet_before_csa = location - (radiotap_len + macHdr_len);
-        int packet_after_csa = body_len - packet_before_csa;
-        memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len, packet_before_csa);
-        memcpy(frame.frame_body.wireless_management + packet_before_csa, csa, sizeof(csa));
-        memcpy(frame.frame_body.wireless_management + packet_before_csa + sizeof(csa), packet + location, packet_after_csa);
+        // int packet_before_csa = location - (radiotap_len + macHdr_len);
+        // int packet_after_csa = body_len - packet_before_csa;
+        // memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len, packet_before_csa);
+        // memcpy(frame.frame_body.wireless_management + packet_before_csa, csa, sizeof(csa));
+        // memcpy(frame.frame_body.wireless_management + packet_before_csa + sizeof(csa), packet + location, packet_after_csa);
 
-        // copy FCS
-        memcpy(&frame.fcs, packet + radiotap_len + macHdr_len + body_len, fcs_len);
+        // // copy FCS
+        // memcpy(&frame.fcs, packet + radiotap_len + macHdr_len + body_len, fcs_len);
 
-        // memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len, body_len);
-        // memcpy(&frame.fcs.FCS, packet +radiotap_len + macHdr_len + body_len, fcs_len);
+        // // change packet length
+        // header->caplen = header->caplen + sizeof(csa);
+
+
+        memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len, body_len);
+        memcpy(&frame.fcs.FCS, packet +radiotap_len + macHdr_len + body_len, fcs_len);
 
 
         printf("packet radiotab: ");
@@ -144,7 +148,7 @@ int main(int argc, char* argv[]) {
         bytes[3] = fcs & 0xFF;
         printf("%02x %02x %02x %02x\n", bytes[0], bytes[1], bytes[2], bytes[3]);
 
-        if (pcap_sendpacket(pcap, (const unsigned char *)&frame, 300) != 0) {
+        if (pcap_sendpacket(pcap, (const unsigned char *)&frame, sizeof(frame)) != 0) {
             fprintf(stderr, "Error sending the packet: %s\n", pcap_geterr(pcap));
             break;
         }

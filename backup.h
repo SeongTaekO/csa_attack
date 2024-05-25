@@ -6,6 +6,7 @@
 #define MAC_ADDR_LEN 6
 
 // http://ktword.co.kr/test/view/view.php?no=2319
+#pragma pack(push, 1) // 1바이트 경계로 패킹
 struct ieee80211_radiotap_header {
     u_int8_t hdr_revision;
     u_int8_t hdr_pad;
@@ -18,7 +19,7 @@ struct ieee80211_radiotap_header {
     u_int8_t antenna_signal;
     u_int8_t antenna;
     u_int16_t rx_flags;
-}__attribute__((packed));
+};
 
 struct ieee80211_mac_hdr {
     u_int16_t frame_control;
@@ -27,21 +28,22 @@ struct ieee80211_mac_hdr {
     u_int8_t src_addr[MAC_ADDR_LEN];
     u_int8_t BSSID[MAC_ADDR_LEN];
     u_int16_t seq_ctrl;
-}__attribute__((packed));
+};
 
 struct ieee80211_frame_body {
     u_int8_t *wireless_management;
-}__attribute__((packed));
+};
 
 struct ieee80211_Frame_Check_Sequence {
     u_int32_t FCS;
-}__attribute__((packed));
+};
 
 struct ieee80211_beacon_frame {
     struct ieee80211_radiotap_header radiotap;
     struct ieee80211_mac_hdr mac_hdr;
     struct ieee80211_frame_body frame_body;
     struct ieee80211_Frame_Check_Sequence fcs;
-}__attribute__((packed));
+};
+#pragma pack(pop)
 
 #endif /* PACKET_STRUCT_H */
