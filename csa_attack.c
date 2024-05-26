@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <pcap.h>
 #include <signal.h>
+#include <unistd.h>
 #include "packet_struct.h"
 
 #define MAC_ADDR_LEN 6
@@ -62,12 +63,13 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    struct ieee80211_beacon_frame frame;
-    struct pcap_pkthdr *header;
-    const unsigned char *packet;
     u_int8_t csa[5] = {0x25, 0x03, 0x01, 0x0d, 0x03};
 
     while (!keyboard_interrupt) {
+        struct ieee80211_beacon_frame frame;
+        struct pcap_pkthdr *header;
+        const unsigned char *packet;
+
         int res = pcap_next_ex(pcap, &header, &packet);
         if (res == 0) continue;
         if (res == PCAP_ERROR || res == PCAP_ERROR_BREAK) {
@@ -79,7 +81,8 @@ int main(int argc, char* argv[]) {
         int radiotap_len = sizeof(frame.radiotap);
         int macHdr_len = sizeof(frame.mac_hdr);
         int fcs_len = sizeof(frame.fcs);
-        int body_len = packet_len - (radiotap_len + macHdr_len + fcs_len);
+        int fixed_param_len = sizeof(frame.frame_body.fixed_param);
+        int body_len = packet_len - (radiotap_len + macHdr_len + fcs_len + fixed_param_len);
 
         if (packet[radiotap_len] != 0x80) {
             printf("\n%02x: not beacon frame continue\n", packet[radiotap_len]);
@@ -104,36 +107,38 @@ int main(int argc, char* argv[]) {
         memcpy(&frame.mac_hdr.BSSID, ap_mac, MAC_ADDR_LEN);
         memcpy(&frame.mac_hdr.seq_ctrl, packet + radiotap_len + 22, 2);
 
-        frame.frame_body.wireless_management = (u_int8_t *)malloc(body_len + sizeof(csa));
+        // copy fixed params
+        memcpy(&frame.frame_body.fixed_param, packet + radiotap_len + macHdr_len, fixed_param_len);
+
+        frame.frame_body.wireless_management = (u_int8_t *)malloc((body_len + sizeof(csa)) * sizeof(u_int8_t));
         if (frame.frame_body.wireless_management == NULL) {
             fprintf(stderr, "Memory allocation failed\n");
             continue;
         }
 
         // copy frame body
-        int packet_before_csa = location - (radiotap_len + macHdr_len);
+        int packet_before_csa = location - (radiotap_len + macHdr_len + fixed_param_len);
         int packet_after_csa = body_len - packet_before_csa;
-        memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len, packet_before_csa);
-        memcpy(frame.frame_body.wireless_management + packet_before_csa, csa, sizeof(csa));
+        memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len + fixed_param_len, packet_before_csa);
+        memcpy(frame.frame_body.wireless_management + packet_before_csa, csa, sizeof(csa)); // 추가된 5바이트를 복사
         memcpy(frame.frame_body.wireless_management + packet_before_csa + sizeof(csa), packet + location, packet_after_csa);
-
+        
         // copy FCS
-        memcpy(&frame.fcs, packet + radiotap_len + macHdr_len + body_len, fcs_len);
-
-        // memcpy(frame.frame_body.wireless_management, packet + radiotap_len + macHdr_len, body_len);
-        // memcpy(&frame.fcs.FCS, packet +radiotap_len + macHdr_len + body_len, fcs_len);
-
+        memcpy(&frame.fcs, packet + radiotap_len + macHdr_len + body_len + fixed_param_len, fcs_len);
 
         printf("packet radiotab: ");
         for (int i=0; i < radiotap_len; i++) {
             printf("%02x ", packet[i]);
         }
         printf("\n\npacket wirless management: ");
-        for (int i=radiotap_len; i < packet_len; i++) {
+        for (int i=radiotap_len + macHdr_len; i < packet_len; i++) {
             printf("%02x ", packet[i]);
         }
         printf("\n\npacket wirless management + CSA: ");
-        for (int i = 0; i < body_len; i++) {
+        for (int i = 0; i< 12; i++) {
+            printf("%02x ", frame.frame_body.fixed_param[i]);
+        }
+        for (int i = 0; i < packet_len - radiotap_len - macHdr_len - fixed_param_len; i++) {
             printf("%02x ", frame.frame_body.wireless_management[i]);
         }
         u_int32_t fcs = ntohl(frame.fcs.FCS);
@@ -144,7 +149,7 @@ int main(int argc, char* argv[]) {
         bytes[3] = fcs & 0xFF;
         printf("%02x %02x %02x %02x\n", bytes[0], bytes[1], bytes[2], bytes[3]);
 
-        if (pcap_sendpacket(pcap, (const unsigned char *)&frame, 300) != 0) {
+        if (pcap_sendpacket(pcap, (const unsigned char *)&frame, header->caplen + sizeof(csa)) != 0) {
             fprintf(stderr, "Error sending the packet: %s\n", pcap_geterr(pcap));
             break;
         }
@@ -153,5 +158,6 @@ int main(int argc, char* argv[]) {
         free(frame.frame_body.wireless_management);
         sleep(1);
     }
+
     pcap_close(pcap);
 }
